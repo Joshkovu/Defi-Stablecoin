@@ -44,6 +44,7 @@ pragma solidity ^0.8.19;
 import {DecentralizedStableCoin} from "src/DecentralizedStableCoin.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 
 contract DSCEngine is ReentrancyGuard {
     ///////////////
@@ -60,6 +61,11 @@ contract DSCEngine is ReentrancyGuard {
     mapping(address token => address priceFeed) private sPriceFeeds;
     mapping(address user => mapping(address token => uint256 amount))
         private sCollateralDeposited;
+    mapping(address user => uint256 amountDscMinted) private sDscMinted;
+
+    uint256 private constant ADDITIONAL_FEE_PRECISION = 1e10;
+    uint256 private constant PRECISION = 1e18;
+    address[] private sCollateralTokens;
     DecentralizedStableCoin private immutable I_DSC;
 
     ///////////////
@@ -102,6 +108,7 @@ contract DSCEngine is ReentrancyGuard {
         //example ETH/USD,BTC
         for (uint256 i = 0; i < tokenAddresses.length; i++) {
             sPriceFeeds[tokenAddresses[i]] = priceFeedAddresses[i];
+            sCollateralTokens.push(tokenAddresses[i]);
         }
         I_DSC = DecentralizedStableCoin(dscAddress);
     }
@@ -151,9 +158,85 @@ contract DSCEngine is ReentrancyGuard {
 
     function burnDsc() external {}
 
-    function mintDsc() external {}
+    // check if the collateral value > DSC value
+    /**
+     *
+     * @param amountDscToMint The amount of decentralized stablecoin to mint
+     * @notice they must have more collateral
+     */
+
+    function mintDsc(
+        uint256 amountDscToMint
+    ) external moreThanZero(amountDscToMint) nonReentrant {
+        sDscMinted[msg.sender] += amountDscToMint;
+        // if they minted too much (150 DSC, 100 ETH)
+        _revertIfHealthFactorIsBroken(msg.sender);
+    }
 
     function Liquidate() external {}
 
     function getHealthFactor() external view {}
+
+    /////////////////////////////////
+    // Private & Internal View Functions //
+    /////////////////////////////////
+    function _getAccountInformation(
+        address user
+    )
+        private
+        view
+        returns (uint256 totalDscMinted, uint256 collateralValueInUsd)
+    {
+        totalDscMinted = sDscMinted[user];
+        collateralValueInUsd = getAccountCollateralValue(user);
+    }
+
+    /**
+     *
+     * @param user - Returns how close to liquidation a user is
+     * If a user gets below 1 , then they can get liquidated
+     */
+    function _healthFactor(address user) private view returns (uint256) {
+        //Total DSC minted
+        //Total collateral value
+        (
+            uint256 totalDscMinted,
+            uint256 collateralValueInUsd
+        ) = _getAccountInformation(user);
+        return totalDscMinted / collateralValueInUsd;
+    }
+
+    function _revertIfHealthFactorIsBroken(address user) internal view {
+        //check health factor , else revert if its broken
+    }
+
+    /////////////////////////////////
+    // Public & External View Functions //
+    /////////////////////////////////
+    function getAccountCollateralValue(
+        address user
+    ) public view returns (uint256 totalCollateralValueInUsd) {
+        //loops through each collateral token, gets the amount they have deposited and maps it to the
+        //price , to get the USD value
+        for (uint256 i = 0; i < sCollateralTokens.length; i++) {
+            address token = sCollateralTokens[i];
+            uint256 amount = sCollateralDeposited[user][token];
+            totalCollateralValueInUsd += getUsdValue(token, amount);
+        }
+        return totalCollateralValueInUsd;
+    }
+
+    function getUsdValue(
+        address token,
+        uint256 amount
+    ) public view returns (uint256) {
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(
+            sPriceFeeds[token]
+        );
+        (, int256 price, , , ) = priceFeed.latestRoundData();
+        // 1 ETH = $1000
+        // The returned value from CL will be 1000 * 1e8
+        return
+            (amount * (uint256(price) * ADDITIONAL_FEE_PRECISION)) / PRECISION;
+    }
 }
