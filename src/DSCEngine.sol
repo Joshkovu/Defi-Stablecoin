@@ -54,6 +54,9 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
     error DSCEngine__TokenNotAllowed();
     error DSCEngine__TransferFailed();
+    error DSCEngine__BreaksHealthFactor(uint256 healthFactor);
+    error DSCEngine__DscMintFailed();
+    error DSCEngine__DscBurnFailed();
 
     /////////////////////
     // State Variables //
@@ -65,6 +68,10 @@ contract DSCEngine is ReentrancyGuard {
 
     uint256 private constant ADDITIONAL_FEE_PRECISION = 1e10;
     uint256 private constant PRECISION = 1e18;
+    uint256 private constant LIQUIDATION_THRESHOLD = 50;
+    uint256 private constant LIQUIDATION_PRECISON = 100;
+    uint256 private constant MIN_HEALTH_FACTOR = 1;
+
     address[] private sCollateralTokens;
     DecentralizedStableCoin private immutable I_DSC;
 
@@ -171,6 +178,10 @@ contract DSCEngine is ReentrancyGuard {
         sDscMinted[msg.sender] += amountDscToMint;
         // if they minted too much (150 DSC, 100 ETH)
         _revertIfHealthFactorIsBroken(msg.sender);
+        bool minted = I_DSC.mint(msg.sender, amountDscToMint);
+        if (!minted) {
+            revert DSCEngine__DscMintFailed();
+        }
     }
 
     function Liquidate() external {}
@@ -203,11 +214,17 @@ contract DSCEngine is ReentrancyGuard {
             uint256 totalDscMinted,
             uint256 collateralValueInUsd
         ) = _getAccountInformation(user);
-        return totalDscMinted / collateralValueInUsd;
+        uint256 collateralAdjustedForThreshold = (collateralValueInUsd *
+            LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISON;
+        return (collateralAdjustedForThreshold * PRECISION) / totalDscMinted;
     }
 
     function _revertIfHealthFactorIsBroken(address user) internal view {
         //check health factor , else revert if its broken
+        uint256 userHealthFactor = _healthFactor(user);
+        if (userHealthFactor < MIN_HEALTH_FACTOR) {
+            revert DSCEngine__BreaksHealthFactor(userHealthFactor);
+        }
     }
 
     /////////////////////////////////
