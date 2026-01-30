@@ -57,7 +57,7 @@ contract DSCEngineTest is Test {
         assertEq(actualUsd, expectedUsd);
     }
 
-    function testGetTokenAmountFromUsd() public {
+    function testGetTokenAmountFromUsd() public view {
         uint256 usdAmount = 100 ether;
         uint256 expectedWeth = 0.05 ether;
         uint256 actualWeth = engine.getTokenAmountFromUsd(weth, usdAmount);
@@ -76,12 +76,11 @@ contract DSCEngineTest is Test {
     }
 
     function testRevertsWithUnapprovedCollateral() public {
-        ERC20Mock ranToken = new ERC20Mock(
-            "ran",
-            "ran",
-            USER,
-            AMOUNT_COLLATERAL
-        );
+        ERC20Mock ranToken = new ERC20Mock();
+        // "ran",
+        // "ran",
+        // USER,
+        // AMOUNT_COLLATERAL
         vm.startPrank(USER);
         vm.expectRevert(DSCEngine.DSCEngine__TokenNotAllowed.selector);
         engine.depositCollateral(address(ranToken), AMOUNT_COLLATERAL);
@@ -108,6 +107,6 @@ contract DSCEngineTest is Test {
             collateralValueInUsd
         );
         assertEq(totalDscMinted, expectedTotalDscMinted);
-        assertEq(AMOUNT_COLLATERAL, expectedCollateralValueInUsd);
+        assertEq(AMOUNT_COLLATERAL, expectedDepositAmount);
     }
 }
