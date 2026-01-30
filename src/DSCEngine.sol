@@ -58,6 +58,7 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__DscMintFailed();
     error DSCEngine__DscBurnFailed();
     error DSCEngine__CollateralIsTooLow();
+    error DSCEngine__HealthFactorNotImproved();
 
     /////////////////////
     // State Variables //
@@ -223,12 +224,24 @@ contract DSCEngine is ReentrancyGuard {
             LIQUIDATION_PERCENT) / LIQUIDATION_PRECISON;
         uint256 totalCollateralToRedeem = tokenAmountFromDebtCovered +
             liquidationBonus;
-        redeemCollateralForDsc(
+
+        _redeemCollateral(
             collateral,
             totalCollateralToRedeem,
-            tokenAmountFromDebtCovered
+            msg.sender,
+            user
         );
         _revertIfHealthFactorIsBroken(user);
+        _burnDSC(debtToCover, user, msg.sender);
+        uint256 endingUserHealthFactor = _healthFactor(user);
+        if (endingUserHealthFactor > startingUserHealthFactor) {
+            uint256 liquidationAmount = debtToCover -
+                tokenAmountFromDebtCovered;
+            mintDsc(liquidationAmount);
+        }
+        if (endingUserHealthFactor < startingUserHealthFactor) {
+            revert DSCEngine__HealthFactorNotImproved();
+        }
     }
 
     function getHealthFactor() external view {}
@@ -253,6 +266,30 @@ contract DSCEngine is ReentrancyGuard {
         if (!minted) {
             revert DSCEngine__DscMintFailed();
         }
+    }
+
+    /**
+     *@dev Low-level internal function , do not call unless function calling it is checking for health factors calling it
+     */
+
+    function _burnDSC(
+        uint256 amountDscToBurn,
+        address onBehalfOf,
+        address dscFrom
+    ) private {
+        sDscMinted[onBehalfOf] -= amountDscToBurn;
+        bool success = I_DSC.transferFrom(
+            dscFrom,
+            address(this),
+            amountDscToBurn
+        );
+        if (!success) {
+            revert DSCEngine__DscBurnFailed();
+        }
+        if (sDscMinted[msg.sender] == 0) {
+            _revertIfHealthFactorIsBroken(msg.sender);
+        }
+        I_DSC.burn(amountDscToBurn);
     }
 
     function _redeemCollateral(
@@ -352,15 +389,8 @@ contract DSCEngine is ReentrancyGuard {
     }
 
     function burnDsc(uint256 amount) public moreThanZero(amount) {
-        sDscMinted[msg.sender] -= amount;
-        bool success = I_DSC.transferFrom(msg.sender, address(this), amount);
-        if (!success) {
-            revert DSCEngine__DscBurnFailed();
-        }
-        if (sDscMinted[msg.sender] == 0) {
-            _revertIfHealthFactorIsBroken(msg.sender);
-        }
-        I_DSC.burn(amount);
+        _burnDSC(amount, msg.sender, msg.sender);
+        _revertIfHealthFactorIsBroken(msg.sender);
     }
 
     function getAccountCollateralValue(
@@ -388,5 +418,15 @@ contract DSCEngine is ReentrancyGuard {
         // The returned value from CL will be 1000 * 1e8
         return
             (amount * (uint256(price) * ADDITIONAL_FEE_PRECISION)) / PRECISION;
+    }
+
+    function getAccountInformation(
+        address user
+    )
+        external
+        view
+        returns (uint256 totalDscMinted, uint256 collateralValueInUsd)
+    {
+        (totalDscMinted, collateralValueInUsd) = _getAccountInformation(user);
     }
 }
