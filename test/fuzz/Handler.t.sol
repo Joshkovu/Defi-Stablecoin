@@ -50,4 +50,20 @@ contract Handler is Test {
         }
         return wbtc;
     }
+
+    function redeemCollateral(
+        uint256 collateralSeed,
+        uint256 amountCollateral
+    ) public {
+        ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
+        uint256 maxCollateralToRedeem = engine.getCollateralBalanceOfUser(
+            address(collateral),
+            msg.sender
+        );
+        amountCollateral = bound(amountCollateral, 0, maxCollateralToRedeem);
+        if (amountCollateral == 0) {
+            return;
+        }
+        engine.redeemCollateral(address(collateral), amountCollateral);
+    }
 }
