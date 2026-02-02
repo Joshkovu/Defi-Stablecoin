@@ -24,8 +24,7 @@ contract DSCEngineTest is Test {
     function setUp() public {
         deployer = new DeployDsc();
         (dsc, engine, config) = deployer.run();
-        (ethUsdPriceFeed, btcUsdPriceFeed, weth, , ) = config
-            .activeNetworkConfig();
+        (ethUsdPriceFeed, btcUsdPriceFeed, weth,,) = config.activeNetworkConfig();
         ERC20Mock(weth).mint(USER, STARTING_ERC20_BALANCE);
     }
 
@@ -39,11 +38,7 @@ contract DSCEngineTest is Test {
         tokenAddresses.push(weth);
         priceFeedAddresses.push(ethUsdPriceFeed);
         priceFeedAddresses.push(btcUsdPriceFeed);
-        vm.expectRevert(
-            DSCEngine
-                .DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength
-                .selector
-        );
+        vm.expectRevert(DSCEngine.DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength.selector);
         new DSCEngine(tokenAddresses, priceFeedAddresses, address(dsc));
     }
 
@@ -95,17 +90,10 @@ contract DSCEngineTest is Test {
         _;
     }
 
-    function testCanDepositCollateralGetAccountInfo()
-        public
-        depositedCollateral
-    {
-        (uint256 totalDscMinted, uint256 collateralValueInUsd) = engine
-            .getAccountInformation(USER);
+    function testCanDepositCollateralGetAccountInfo() public depositedCollateral {
+        (uint256 totalDscMinted, uint256 collateralValueInUsd) = engine.getAccountInformation(USER);
         uint256 expectedTotalDscMinted = 0;
-        uint256 expectedDepositAmount = engine.getTokenAmountFromUsd(
-            weth,
-            collateralValueInUsd
-        );
+        uint256 expectedDepositAmount = engine.getTokenAmountFromUsd(weth, collateralValueInUsd);
         assertEq(totalDscMinted, expectedTotalDscMinted);
         assertEq(AMOUNT_COLLATERAL, expectedDepositAmount);
     }
