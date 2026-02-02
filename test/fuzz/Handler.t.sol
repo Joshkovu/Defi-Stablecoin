@@ -7,6 +7,7 @@ import {DeployDsc} from "script/DeployDsc.s.sol";
 import {HelperConfig} from "script/HelperConfig.s.sol";
 import {DecentralizedStableCoin} from "src/DecentralizedStableCoin.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import {MockV3Aggregator} from "../mocks/MockV3Aggregator.sol";
 
 contract Handler is Test {
     // DeployDsc deployer;
@@ -17,6 +18,8 @@ contract Handler is Test {
     uint256 public timesMintIsCalled;
     address[] public usersWithCollateralDeposited;
     uint256 MAX_DEPOSIT_SIZE = type(uint96).max;
+    MockV3Aggregator public ethUsdPriceFeed;
+    MockV3Aggregator public btcUsdPriceFeed;
 
     // HelperConfig config;
 
@@ -26,6 +29,11 @@ contract Handler is Test {
         address[] memory collateralTokens = engine.getCollateralTokens();
         weth = ERC20Mock(collateralTokens[0]);
         wbtc = ERC20Mock(collateralTokens[1]);
+        ethUsdPriceFeed = MockV3Aggregator(
+            engine.getCollateralTokenPriceFeed(address(weth))
+        );
+
+        engine.getCollateralTokenPriceFeed(address(wbtc));
     }
 
     // redeem collateral
@@ -44,6 +52,11 @@ contract Handler is Test {
         vm.stopPrank();
         // double push
         usersWithCollateralDeposited.push(msg.sender);
+    }
+
+    function updateCollateralPrice(uint96 newPrice) public {
+        int256 newPriceInt = int256(uint256(newPrice));
+        ethUsdPriceFeed.updateAnswer(newPriceInt);
     }
 
     function _getCollateralFromSeed(
